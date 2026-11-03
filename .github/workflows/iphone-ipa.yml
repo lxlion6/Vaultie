@@ -1,0 +1,41 @@
+
+name: Vaultie iPhone IPA bauen
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vaultie erstellen
+        run: |
+          set -e
+          xcodebuild \
+            -project Vaultie_iPhone_kostenlos_GitHub_Build/Vaultie.xcodeproj \
+            -scheme Vaultie \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/build/Build/Products/Release-iphoneos/Vaultie.app" \
+            "$RUNNER_TEMP/ipa/Payload/"
+
+          cd "$RUNNER_TEMP/ipa"
+          zip -qr "$GITHUB_WORKSPACE/Vaultie.ipa" Payload
+
+      - name: IPA bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vaultie-iPhone
+          path: Vaultie.ipa
+          
