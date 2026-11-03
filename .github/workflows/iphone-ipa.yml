@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -38,4 +38,21 @@ jobs:
         with:
           name: Vaultie-iPhone
           path: Vaultie.ipa
+
+      - name: IPA als direkten Release-Download anbieten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ios-preview"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" Vaultie.ipa --clobber
+          else
+            gh release create "$TAG" Vaultie.ipa \
+              --target "${GITHUB_SHA}" \
+              --title "Vaultie iPhone - Testversion" \
+              --notes "Unsignierte IPA aus GitHub Actions. Vor der Installation auf einem iPhone ist eine gueltige Apple-Signatur erforderlich." \
+              --prerelease
+          fi
           
