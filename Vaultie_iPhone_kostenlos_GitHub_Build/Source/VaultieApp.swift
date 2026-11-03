@@ -7,7 +7,7 @@ private enum Brand {
     static let mint = Color(red: 0.29, green: 0.88, blue: 0.84)
 }
 
-private struct SavedBookmark: Codable, Identifiable {
+struct SavedBookmark: Codable, Identifiable {
     var id: String { address }
     let name: String
     let address: String
