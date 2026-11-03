@@ -1,0 +1,38 @@
+VAULTIE - iPhone-Version 1.0 (Entwicklungsprojekt)
+
+INHALT
+- Vollstaendiges Xcode-Projekt Vaultie.xcodeproj
+- SwiftUI-/WebKit-Quellcode
+- Vaultie-App-Symbol
+- Kein VPN, keine Browser-Cloud-Synchronisierung
+- Nichtpersistente Website-Sitzungen, lokal gespeicherte Lesezeichen
+- Einfache integrierte Werbe-/Tracking-Domainfilter
+
+INSTALLATION AUF EINEM IPHONE 11 PRO
+Die ZIP ist KEINE direkt installierbare iPhone-App.
+Zur einmaligen Erstellung und Installation benoetigst du einen Mac mit Xcode
+und eine Apple-ID fuer die erforderliche Code-Signierung.
+
+1. ZIP auf einem Mac entpacken.
+2. Vaultie.xcodeproj in Xcode oeffnen.
+3. iPhone anschliessen und als Zielgeraet auswaehlen.
+4. Unter Signing & Capabilities ein eigenes Apple Developer Team waehlen.
+5. Bundle Identifier gegebenenfalls eindeutig anpassen.
+6. Auf Run (Dreieck) klicken. Xcode signiert und installiert die App.
+7. Eventuell auf dem iPhone den Entwicklermodus aktivieren.
+
+Eine fertige einzelne .ipa waere erst NACH dem macOS/iOS-Build und
+Apple-Code-Signierung moeglich. Hier konnte weder Xcode noch das iPhone
+auf echte Funktion getestet werden. Einige Videodienste verlangen DRM,
+das in WKWebView nicht durchgaengig unterstuetzt wird.
+
+DATENSCHUTZ
+- Kein eigener Cloud-Dienst, keine Sync-Funktion
+- Lesezeichen im lokalen Application-Support-Ordner, von iCloud-Backup ausgenommen
+- WKWebsiteDataStore.nonPersistent() fuer Webspeicher und Cookies
+- Kein dauerhafter Browser-Verlauf in der App
+- Betriebssystem, Websites, Suchmaschinen und Netzwerk koennen Verbindungsdaten
+  unabhaengig davon verarbeiten oder speichern
+- Kein VPN in der iPhone-Version
+
+Logo 1.1: V-Globus als freigestelltes Symbol ohne Screenshot-Hintergrund. Das iOS-Icon hat nur eine einfarbige, technisch notwendige Icon-Flaeche.

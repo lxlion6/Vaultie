@@ -1,0 +1,18 @@
+VAULTIE FUER IPHONE 11 PRO - KOSTENLOSER BUILD UNTER WINDOWS
+
+1. Bei github.com anmelden oder kostenloses GitHub-Konto erstellen.
+2. Ein neues Repository erstellen. PUBLIC (oeffentlich) waehlen, wenn du keine privaten Build-Minuten nutzen willst. ACHTUNG: Der Quellcode ist dann fuer alle sichtbar.
+3. Den gesamten INHALT dieses Ordners (auch den versteckten .github-Ordner!) ins Repository hochladen, direkt ins Wurzelverzeichnis.
+4. GitHub: Actions -> Vaultie iPhone IPA bauen -> Run workflow.
+5. Nach erfolgreichem Abschluss beim Workflow unter Artifacts die ZIP Vaultie-iPhone-IPA herunterladen und entpacken. Darin liegt Vaultie-unsigned.ipa.
+6. Windows: Sideloadly von https://sideloadly.io herunterladen und nach offizieller Anleitung einrichten. iPhone per USB anschliessen und Vertrauen bestaetigen.
+7. Vaultie-unsigned.ipa in Sideloadly auswaehlen; mit deiner normalen Apple-ID signieren und auf das iPhone installieren.
+8. Auf dem iPhone bei Bedarf den Entwickler-Modus aktivieren und unter Einstellungen -> Allgemein -> VPN und Geraeteverwaltung das Entwicklerprofil vertrauen.
+9. Apple-ID (gratis): App-Signierung laeuft nach 7 Tagen ab. Sideloadly kann sie bei passenden PC-/iPhone-Einstellungen erneuern.
+
+WICHTIG:
+- Die IPA ist in diesem Paket NICHT enthalten. Sie wird erst auf GitHubs macOS-Runner gebaut.
+- Build wurde hier nicht auf macOS/Xcode ausgefuehrt und kann scheitern. Fehlermeldungen bitte zur Korrektur melden.
+- Das iPhone-Appprojekt ist eine Entwicklungsfassung, keine unabhaengig sicherheitsgepruefte App.
+- Kein VPN eingebaut. App speichert Lesezeichen lokal und WebKit nutzt einen nichtpersistenten Website-Datenspeicher.
+- Ein Public-Repository macht den Quellcode oeffentlich. Keine Passwoerter, Apple-ID oder Zugangstokens hochladen.
