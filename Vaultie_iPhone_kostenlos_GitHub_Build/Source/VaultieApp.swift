@@ -227,7 +227,7 @@ struct VaultieScreen: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(Brand.panel, in: RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 9)
+                .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 6)
 
                 ZStack {
                     BrowserWebView(model: model)
@@ -236,6 +236,7 @@ struct VaultieScreen: View {
                         home
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if model.isLoading { ProgressView().tint(Brand.mint).padding(5) }
                 HStack {
                     nav("chevron.left", enabled: model.canBack) {
@@ -261,10 +262,12 @@ struct VaultieScreen: View {
                     } label: { Image(systemName: "line.3.horizontal").frame(width: 35, height: 38) }
                 }
                 .font(.title3).foregroundStyle(Brand.mint)
-                .padding(.horizontal, 22).padding(.vertical, 8)
+                .padding(.horizontal, 20).padding(.vertical, 6)
                 .background(Brand.panel)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $model.showBookmarks) {
             NavigationStack {
@@ -305,26 +308,26 @@ struct VaultieScreen: View {
 
     private var home: some View {
         ScrollView {
-            VStack(spacing: 23) {
-                Spacer(minLength: 40)
+            VStack(spacing: 14) {
+                Spacer(minLength: 12)
                 Image("VaultieMark").resizable().scaledToFit()
-                    .frame(width: 145, height: 145)
-                Text("Vaultie").font(.system(size: 33, weight: .semibold))
+                    .frame(width: 88, height: 88)
+                Text("Vaultie").font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(.white)
                 Text("Privat surfen. Lokal speichern.")
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.74))
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 13) {
+                    .font(.footnote).foregroundStyle(.white.opacity(0.74))
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(starters, id: \.0) { item in
                         Button {
                             if item.2 == "vaultie:bookmarks" { model.showBookmarks = true }
                             else { model.navigate(item.2) }
                         } label: {
-                            VStack(spacing: 11) {
+                            VStack(spacing: 7) {
                                 Image(systemName: item.1).font(.title2)
                                 Text(item.0).font(.subheadline)
                             }
                             .foregroundStyle(.white).frame(maxWidth: .infinity)
-                            .frame(height: 93)
+                            .frame(height: 72)
                             .background(Brand.panel, in: RoundedRectangle(cornerRadius: 15))
                         }
                     }
@@ -334,7 +337,7 @@ struct VaultieScreen: View {
                     .font(.footnote).foregroundStyle(Brand.mint).padding(.top, 8)
                 Text("Kein integriertes VPN · Keine Cloud-Synchronisierung")
                     .font(.caption).foregroundStyle(.white.opacity(0.7))
-                Spacer(minLength: 50)
+                Spacer(minLength: 10)
             }
             .frame(maxWidth: .infinity)
         }
