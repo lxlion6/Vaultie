@@ -3,6 +3,11 @@ name: Vaultie iPhone IPA bauen
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Vaultie_iPhone_kostenlos_GitHub_Build/**'
+      - '.github/workflows/iphone-ipa.yml'
 
 permissions:
   contents: write
