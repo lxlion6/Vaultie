@@ -41,7 +41,6 @@ final class VaultieState: ObservableObject {
     private let settings = UserDefaults.standard
 
     init() {
-        tabOrder = [activeTab]
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Vaultie", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
@@ -50,6 +49,7 @@ final class VaultieState: ObservableObject {
         values.isExcludedFromBackup = true
         try? excluded.setResourceValues(values)
         fileURL = appSupport.appendingPathComponent("bookmarks.json")
+        tabOrder = [activeTab]
         if let data = try? Data(contentsOf: fileURL),
            let loaded = try? JSONDecoder().decode([SavedBookmark].self, from: data) {
             bookmarks = loaded
