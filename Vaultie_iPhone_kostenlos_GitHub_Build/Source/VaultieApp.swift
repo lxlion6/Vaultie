@@ -26,13 +26,18 @@ final class VaultieState: ObservableObject {
     @Published var showPrivacy = false
     @Published var currentPageIsHome = true
     @Published var errorText: String?
-    weak var webView: WKWebView?
+    @Published var showTabs = false
+    @Published var activeTab = UUID()
+    @Published var tabOrder: [UUID] = []
+    private var tabViews: [UUID: WKWebView] = [:]
+    var webView: WKWebView? { tabViews[activeTab] }
 
     let websiteStore = WKWebsiteDataStore.nonPersistent()
     private let fileURL: URL
     private let settings = UserDefaults.standard
 
     init() {
+        tabOrder = [activeTab]
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Vaultie", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
@@ -48,6 +53,52 @@ final class VaultieState: ObservableObject {
         if settings.object(forKey: "blockingEnabled") != nil {
             blockAds = settings.bool(forKey: "blockingEnabled")
         }
+    }
+
+    func registerActiveWebView(_ webView: WKWebView) {
+        tabViews[activeTab] = webView
+    }
+
+    func selectTab(_ id: UUID) {
+        guard tabOrder.contains(id) else { return }
+        activeTab = id
+        let view = tabViews[id]
+        address = view?.url?.absoluteString ?? ""
+        title = view?.title ?? "Neuer Tab"
+        canBack = view?.canGoBack ?? false
+        canForward = view?.canGoForward ?? false
+        currentPageIsHome = view?.url == nil || view?.url?.absoluteString == "about:blank"
+        showTabs = false
+    }
+
+    func newTab() {
+        let id = UUID()
+        tabOrder.append(id)
+        activeTab = id
+        currentPageIsHome = true
+        address = ""
+        title = "Neuer Tab"
+        canBack = false
+        canForward = false
+        showTabs = false
+    }
+
+    func closeTab(_ id: UUID) {
+        guard let index = tabOrder.firstIndex(of: id) else { return }
+        tabViews[id]?.stopLoading()
+        tabViews[id]?.removeFromSuperview()
+        tabViews.removeValue(forKey: id)
+        tabOrder.remove(at: index)
+        if tabOrder.isEmpty {
+            newTab()
+        } else if activeTab == id {
+            selectTab(tabOrder[min(index, tabOrder.count - 1)])
+        }
+    }
+
+    func tabTitle(_ id: UUID) -> String {
+        let value = tabViews[id]?.title ?? "Neuer Tab"
+        return value.isEmpty ? "Neuer Tab" : value
     }
 
     func navigate(_ text: String? = nil) {
@@ -133,31 +184,52 @@ private struct BrowserWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = model.websiteStore
-        config.defaultWebpagePreferences.allowsContentJavaScript = true
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = [.audio]
-        config.preferences.javaScriptCanOpenWindowsAutomatically = false
-        let view = WKWebView(frame: .zero, configuration: config)
-        view.navigationDelegate = context.coordinator
-        view.uiDelegate = context.coordinator
-        view.allowsBackForwardNavigationGestures = true
-        view.isOpaque = false
-        view.backgroundColor = UIColor(Brand.dark)
-        model.webView = view
-        if model.blockAds { PrivacyRules.install(on: view) }
-        return view
+    func makeUIView(context: Context) -> UIView {
+        let host = UIView(frame: .zero)
+        host.backgroundColor = UIColor(Brand.dark)
+        return host
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ host: UIView, context: Context) {
+        let view: WKWebView
+        if let existing = model.webView {
+            view = existing
+        } else {
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = model.websiteStore
+            config.defaultWebpagePreferences.allowsContentJavaScript = true
+            config.allowsInlineMediaPlayback = true
+            config.mediaTypesRequiringUserActionForPlayback = [.audio]
+            config.preferences.javaScriptCanOpenWindowsAutomatically = false
+            view = WKWebView(frame: .zero, configuration: config)
+            view.navigationDelegate = context.coordinator
+            view.uiDelegate = context.coordinator
+            view.allowsBackForwardNavigationGestures = true
+            view.isOpaque = false
+            view.backgroundColor = UIColor(Brand.dark)
+            model.registerActiveWebView(view)
+            if model.blockAds { PrivacyRules.install(on: view) }
+        }
+        if host.subviews.first !== view {
+            host.subviews.forEach { $0.removeFromSuperview() }
+            view.removeFromSuperview()
+            host.addSubview(view)
+            view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                view.topAnchor.constraint(equalTo: host.topAnchor),
+                view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+                view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: host.trailingAnchor)
+            ])
+        }
+    }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let model: VaultieState
         init(model: VaultieState) { self.model = model }
 
         private func refresh(_ view: WKWebView) {
+            guard model.webView === view else { return }
             model.address = view.url?.absoluteString ?? ""
             model.title = view.title ?? "Vaultie"
             model.canBack = view.canGoBack
@@ -253,7 +325,19 @@ struct VaultieScreen: View {
                     Spacer()
                     nav("star", enabled: true) { model.remember() }
                     Spacer()
+                    Button { model.showTabs = true } label: {
+                        Image(systemName: "square.on.square")
+                            .overlay(alignment: .topTrailing) {
+                                Text("\(model.tabOrder.count)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .offset(x: 8, y: -7)
+                            }
+                            .frame(width: 35, height: 38)
+                    }
+                    Spacer()
                     Menu {
+                        Button("Neuer Tab", systemImage: "plus") { model.newTab() }
+                        Button("Tabs", systemImage: "square.on.square") { model.showTabs = true }
                         Button("Lesezeichen", systemImage: "bookmark") { model.showBookmarks = true }
                         Button(model.blockAds ? "Werbeblocker deaktivieren" : "Werbeblocker aktivieren",
                                systemImage: "hand.raised") { model.toggleBlocking() }
@@ -269,6 +353,39 @@ struct VaultieScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $model.showTabs) {
+            NavigationStack {
+                List {
+                    ForEach(model.tabOrder, id: \.self) { id in
+                        HStack {
+                            Button {
+                                model.selectTab(id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(model.tabTitle(id)).lineLimit(1)
+                                    Text(id == model.activeTab ? "Aktiver Tab" : "Öffnen")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button(role: .destructive) { model.closeTab(id) } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                .navigationTitle("Tabs")
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Fertig") { model.showTabs = false }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { model.newTab() } label: { Image(systemName: "plus") }
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $model.showBookmarks) {
             NavigationStack {
                 List {
