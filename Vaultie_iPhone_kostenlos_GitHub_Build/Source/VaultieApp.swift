@@ -38,7 +38,7 @@ final class VaultieState: ObservableObject {
 
     let websiteStore = WKWebsiteDataStore.nonPersistent()
     private let fileURL: URL
-    private let settings = UserDefaults.standard
+    private let preferencesURL: URL
 
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -49,13 +49,29 @@ final class VaultieState: ObservableObject {
         values.isExcludedFromBackup = true
         try? excluded.setResourceValues(values)
         fileURL = appSupport.appendingPathComponent("bookmarks.json")
+        preferencesURL = appSupport.appendingPathComponent("preferences.json")
         tabOrder = [activeTab]
+        // iOS can back up Documents by default. Exclude Vaultie's downloads.
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var localDocuments = documents
+        var documentValues = URLResourceValues()
+        documentValues.isExcludedFromBackup = true
+        try? localDocuments.setResourceValues(documentValues)
+        // Migrate the old preference from UserDefaults to an excluded local file.
+        if !FileManager.default.fileExists(atPath: preferencesURL.path),
+           let legacy = UserDefaults.standard.object(forKey: "blockingEnabled") as? Bool,
+           let encoded = try? JSONEncoder().encode(["blockingEnabled": legacy]) {
+            try? encoded.write(to: preferencesURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        }
+        UserDefaults.standard.removeObject(forKey: "blockingEnabled")
         if let data = try? Data(contentsOf: fileURL),
            let loaded = try? JSONDecoder().decode([SavedBookmark].self, from: data) {
             bookmarks = loaded
         }
-        if settings.object(forKey: "blockingEnabled") != nil {
-            blockAds = settings.bool(forKey: "blockingEnabled")
+        if let data = try? Data(contentsOf: preferencesURL),
+           let prefs = try? JSONDecoder().decode([String: Bool].self, from: data),
+           let enabled = prefs["blockingEnabled"] {
+            blockAds = enabled
         }
     }
 
@@ -161,7 +177,9 @@ final class VaultieState: ObservableObject {
 
     func toggleBlocking() {
         blockAds.toggle()
-        settings.set(blockAds, forKey: "blockingEnabled")
+        if let encoded = try? JSONEncoder().encode(["blockingEnabled": blockAds]) {
+            try? encoded.write(to: preferencesURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        }
         for view in tabViews.values {
             view.configuration.userContentController.removeAllContentRuleLists()
             if blockAds { PrivacyRules.install(on: view) }
