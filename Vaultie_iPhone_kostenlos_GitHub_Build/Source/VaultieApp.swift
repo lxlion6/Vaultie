@@ -27,6 +27,9 @@ final class VaultieState: ObservableObject {
     @Published var currentPageIsHome = true
     @Published var errorText: String?
     @Published var showTabs = false
+    @Published var showDownloads = false
+    @Published var downloadNotice: String?
+    @Published var downloadFiles: [URL] = []
     @Published var activeTab = UUID()
     @Published var tabOrder: [UUID] = []
     private var tabViews: [UUID: WKWebView] = [:]
@@ -53,6 +56,12 @@ final class VaultieState: ObservableObject {
         if settings.object(forKey: "blockingEnabled") != nil {
             blockAds = settings.bool(forKey: "blockingEnabled")
         }
+    }
+
+    func refreshDownloads() {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        downloadFiles = ((try? FileManager.default.contentsOfDirectory(at: documents, includingPropertiesForKeys: [.creationDateKey], options: [.skipsHiddenFiles])) ?? [])
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
     func registerActiveWebView(_ webView: WKWebView) {
@@ -163,7 +172,11 @@ private enum PrivacyRules {
     static func install(on webView: WKWebView) {
         let hosts = ["doubleclick.net", "googlesyndication.com", "googleadservices.com",
                      "adnxs.com", "taboola.com", "outbrain.com", "scorecardresearch.com",
-                     "adsrvr.org", "criteo.com", "amazon-adsystem.com"]
+                     "adsrvr.org", "criteo.com", "amazon-adsystem.com", "yieldmo.com",
+                     "casalemedia.com", "rubiconproject.com", "pubmatic.com", "openx.net",
+                     "smartadserver.com", "bidswitch.net", "quantserve.com", "moatads.com",
+                     "demdex.net", "advertising.com", "media.net", "lijit.com",
+                     "serving-sys.com", "3lift.com", "teads.tv"]
         let rules: [[String: Any]] = hosts.map { domain in
             ["trigger": ["url-filter": "^https?://([^/]*\\.)?" + NSRegularExpression.escapedPattern(for: domain) + "([/:]|$)"],
              "action": ["type": "block"]]
@@ -224,9 +237,56 @@ private struct BrowserWebView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
         let model: VaultieState
         init(model: VaultieState) { self.model = model }
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+            download.delegate = self
+        }
+
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+            download.delegate = self
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                     decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            if !navigationResponse.canShowMIMEType {
+                decisionHandler(.download)
+            } else {
+                decisionHandler(.allow)
+            }
+        }
+
+        func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
+                      suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let original = (suggestedFilename as NSString).lastPathComponent
+            let safe = original.isEmpty ? "Download" : original
+            let name = (safe as NSString).deletingPathExtension
+            let ext = (safe as NSString).pathExtension
+            var target = documents.appendingPathComponent(safe)
+            var number = 1
+            while FileManager.default.fileExists(atPath: target.path) {
+                let fileName = ext.isEmpty ? "\(name)-\(number)" : "\(name)-\(number).\(ext)"
+                target = documents.appendingPathComponent(fileName)
+                number += 1
+            }
+            completionHandler(target)
+        }
+
+        func downloadDidFinish(_ download: WKDownload) {
+            Task { @MainActor in
+                model.refreshDownloads()
+                model.downloadNotice = "Download abgeschlossen. Du findest die Datei unter Vaultie in der Dateien-App."
+            }
+        }
+
+        func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+            Task { @MainActor in
+                model.downloadNotice = "Download fehlgeschlagen: \(error.localizedDescription)"
+            }
+        }
 
         private func refresh(_ view: WKWebView) {
             guard model.webView === view else { return }
@@ -341,6 +401,10 @@ struct VaultieScreen: View {
                         Button("Lesezeichen", systemImage: "bookmark") { model.showBookmarks = true }
                         Button(model.blockAds ? "Werbeblocker deaktivieren" : "Werbeblocker aktivieren",
                                systemImage: "hand.raised") { model.toggleBlocking() }
+                        Button("Downloads", systemImage: "arrow.down.circle") {
+                            model.refreshDownloads()
+                            model.showDownloads = true
+                        }
                         Button("Sitzungsdaten löschen", systemImage: "trash") { model.clearSession() }
                         Button("Datenschutz", systemImage: "lock.shield") { model.showPrivacy = true }
                     } label: { Image(systemName: "line.3.horizontal").frame(width: 35, height: 38) }
@@ -386,6 +450,19 @@ struct VaultieScreen: View {
                 }
             }
         }
+        .sheet(isPresented: $model.showDownloads) {
+            NavigationStack {
+                List(model.downloadFiles, id: \.self) { file in
+                    ShareLink(item: file) {
+                        Label(file.lastPathComponent, systemImage: "doc")
+                    }
+                }
+                .navigationTitle("Lokale Downloads")
+                .toolbar {
+                    Button("Fertig") { model.showDownloads = false }
+                }
+            }
+        }
         .sheet(isPresented: $model.showBookmarks) {
             NavigationStack {
                 List {
@@ -404,6 +481,14 @@ struct VaultieScreen: View {
                 .navigationTitle("Lokale Lesezeichen")
                 .toolbar { Button("Fertig") { model.showBookmarks = false } }
             }
+        }
+        .alert("Download", isPresented: Binding(
+            get: { model.downloadNotice != nil },
+            set: { if !$0 { model.downloadNotice = nil } }
+        )) {
+            Button("OK", role: .cancel) { model.downloadNotice = nil }
+        } message: {
+            Text(model.downloadNotice ?? "")
         }
         .alert("Datenschutz", isPresented: $model.showPrivacy) {
             Button("OK", role: .cancel) {}
