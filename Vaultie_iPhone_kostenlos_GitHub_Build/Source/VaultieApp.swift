@@ -33,6 +33,7 @@ final class VaultieState: ObservableObject {
     @Published var activeTab = UUID()
     @Published var tabOrder: [UUID] = []
     private var tabViews: [UUID: WKWebView] = [:]
+    private var pendingURLs: [UUID: URL] = [:]
     var webView: WKWebView? { tabViews[activeTab] }
 
     let websiteStore = WKWebsiteDataStore.nonPersistent()
@@ -66,6 +67,10 @@ final class VaultieState: ObservableObject {
 
     func registerActiveWebView(_ webView: WKWebView) {
         tabViews[activeTab] = webView
+        if let pending = pendingURLs.removeValue(forKey: activeTab) {
+            currentPageIsHome = false
+            webView.load(URLRequest(url: pending))
+        }
     }
 
     func selectTab(_ id: UUID) {
@@ -80,8 +85,9 @@ final class VaultieState: ObservableObject {
         showTabs = false
     }
 
-    func newTab() {
+    func newTab(_ target: URL? = nil) {
         let id = UUID()
+        if let target { pendingURLs[id] = target }
         tabOrder.append(id)
         activeTab = id
         currentPageIsHome = true
@@ -97,6 +103,7 @@ final class VaultieState: ObservableObject {
         tabViews[id]?.stopLoading()
         tabViews[id]?.removeFromSuperview()
         tabViews.removeValue(forKey: id)
+        pendingURLs.removeValue(forKey: id)
         tabOrder.remove(at: index)
         if tabOrder.isEmpty {
             newTab()
@@ -155,16 +162,30 @@ final class VaultieState: ObservableObject {
     func toggleBlocking() {
         blockAds.toggle()
         settings.set(blockAds, forKey: "blockingEnabled")
-        // New tabs/next app launch use the new rule state; rebuild the WKWebView here.
-        webView?.configuration.userContentController.removeAllContentRuleLists()
-        if blockAds, let web = webView { PrivacyRules.install(on: web) }
-        webView?.reload()
+        for view in tabViews.values {
+            view.configuration.userContentController.removeAllContentRuleLists()
+            if blockAds { PrivacyRules.install(on: view) }
+            view.reload()
+        }
     }
 
     func clearSession() {
-        websiteStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { [weak self] in
-            Task { @MainActor in self?.goHome() }
+        for view in tabViews.values {
+            view.stopLoading()
+            view.loadHTMLString("", baseURL: nil)
+            view.removeFromSuperview()
         }
+        tabViews.removeAll()
+        pendingURLs.removeAll()
+        let tab = UUID()
+        tabOrder = [tab]
+        activeTab = tab
+        currentPageIsHome = true
+        address = ""
+        title = "Vaultie"
+        canBack = false
+        canForward = false
+        websiteStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
     }
 }
 
@@ -251,7 +272,10 @@ private struct BrowserWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                      decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-            if !navigationResponse.canShowMIMEType {
+            let attachment = (navigationResponse.response as? HTTPURLResponse)?
+                .value(forHTTPHeaderField: "Content-Disposition")?
+                .localizedCaseInsensitiveContains("attachment") ?? false
+            if attachment || !navigationResponse.canShowMIMEType {
                 decisionHandler(.download)
             } else {
                 decisionHandler(.allow)
@@ -322,7 +346,7 @@ private struct BrowserWebView: UIViewRepresentable {
                      windowFeatures: WKWindowFeatures) -> WKWebView? {
             if navigationAction.targetFrame == nil, let url = navigationAction.request.url,
                ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
-                webView.load(URLRequest(url: url))
+                model.newTab(url)
             }
             return nil
         }
