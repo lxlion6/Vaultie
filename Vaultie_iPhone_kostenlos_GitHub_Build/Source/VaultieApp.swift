@@ -7,6 +7,31 @@ private enum Brand {
     static let mint = Color(red: 0.29, green: 0.88, blue: 0.84)
 }
 
+
+private enum LocalTrackingProtection {
+    private static let exact: Set<String> = [
+        "fbclid", "gclid", "dclid", "msclkid", "twclid", "igshid", "mc_cid", "mc_eid"
+    ]
+    static let domainCount = 26
+
+    static func clean(_ url: URL) -> (URL, Int) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = components.queryItems, !items.isEmpty else {
+            return (url, 0)
+        }
+        let filtered = items.filter { item in
+            let key = item.name.lowercased()
+            return !key.hasPrefix("utm_") && !exact.contains(key)
+        }
+        let removed = items.count - filtered.count
+        guard removed > 0 else { return (url, 0) }
+        components.queryItems = filtered.isEmpty ? nil : filtered
+        guard let cleaned = components.url else { return (url, 0) }
+        return (cleaned, removed)
+    }
+}
+
 struct SavedBookmark: Codable, Identifiable {
     var id: String { address }
     let name: String
@@ -21,6 +46,9 @@ final class VaultieState: ObservableObject {
     @Published var canBack = false
     @Published var canForward = false
     @Published var blockAds = true
+    @Published var stripTracking = true
+    @Published var cleanedParameters = 0
+    @Published var showTrackingReport = false
     @Published var bookmarks: [SavedBookmark] = []
     @Published var showBookmarks = false
     @Published var showPrivacy = false
@@ -76,6 +104,7 @@ final class VaultieState: ObservableObject {
            let prefs = try? JSONDecoder().decode([String: Bool].self, from: data),
            let enabled = prefs["blockingEnabled"] {
             blockAds = enabled
+            stripTracking = prefs["stripTracking"] ?? true
         }
     }
 
@@ -89,7 +118,7 @@ final class VaultieState: ObservableObject {
         tabViews[activeTab] = webView
         if let pending = pendingURLs.removeValue(forKey: activeTab) {
             currentPageIsHome = false
-            webView.load(URLRequest(url: pending))
+            webView.load(URLRequest(url: cleanedURL(pending)))
         }
     }
 
@@ -137,6 +166,26 @@ final class VaultieState: ObservableObject {
         return value.isEmpty ? "Neuer Tab" : value
     }
 
+    func cleanedURL(_ url: URL) -> URL {
+        guard stripTracking else { return url }
+        let (result, removed) = LocalTrackingProtection.clean(url)
+        cleanedParameters += removed
+        return result
+    }
+
+    private func savePrivacySettings() {
+        if let data = try? JSONEncoder().encode([
+            "blockingEnabled": blockAds, "stripTracking": stripTracking
+        ]) {
+            try? data.write(to: preferencesURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        }
+    }
+
+    func toggleTrackingParameters() {
+        stripTracking.toggle()
+        savePrivacySettings()
+    }
+
     func navigate(_ text: String? = nil) {
         let query = (text ?? address).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
@@ -152,7 +201,7 @@ final class VaultieState: ObservableObject {
         }
         guard let destination else { return }
         currentPageIsHome = false
-        webView?.load(URLRequest(url: destination))
+        webView?.load(URLRequest(url: cleanedURL(destination)))
     }
 
     func goHome() {
@@ -181,9 +230,7 @@ final class VaultieState: ObservableObject {
 
     func toggleBlocking() {
         blockAds.toggle()
-        if let encoded = try? JSONEncoder().encode(["blockingEnabled": blockAds]) {
-            try? encoded.write(to: preferencesURL, options: [.atomic, .completeFileProtectionUnlessOpen])
-        }
+        savePrivacySettings()
         for view in tabViews.values {
             view.configuration.userContentController.removeAllContentRuleLists()
             if blockAds { PrivacyRules.install(on: view) }
@@ -199,6 +246,7 @@ final class VaultieState: ObservableObject {
         }
         tabViews.removeAll()
         pendingURLs.removeAll()
+        cleanedParameters = 0
         let tab = UUID()
         tabOrder = [tab]
         activeTab = tab
@@ -361,7 +409,22 @@ private struct BrowserWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             let scheme = navigationAction.request.url?.scheme?.lowercased() ?? ""
-            decisionHandler(["http", "https", "about", "blob", "data"].contains(scheme) ? .allow : .cancel)
+            guard ["http", "https", "about", "blob", "data"].contains(scheme) else {
+                decisionHandler(.cancel)
+                return
+            }
+            // Restrict rewriting to top-level GET requests, not login forms or subresources.
+            if navigationAction.targetFrame?.isMainFrame == true,
+               navigationAction.request.httpMethod?.uppercased() == "GET",
+               let url = navigationAction.request.url, model.stripTracking {
+                let cleaned = model.cleanedURL(url)
+                if cleaned != url {
+                    decisionHandler(.cancel)
+                    webView.load(URLRequest(url: cleaned))
+                    return
+                }
+            }
+            decisionHandler(.allow)
         }
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction,
@@ -451,6 +514,11 @@ struct VaultieScreen: View {
                             model.refreshDownloads()
                             model.showDownloads = true
                         }
+                        Button(model.stripTracking ? "Link-Tracking-Schutz deaktivieren" : "Link-Tracking-Schutz aktivieren",
+                               systemImage: "link") { model.toggleTrackingParameters() }
+                        Button("Trackingschutz-Bericht", systemImage: "shield.lefthalf.filled") {
+                            model.showTrackingReport = true
+                        }
                         Button("Sitzungsdaten löschen", systemImage: "trash") { model.clearSession() }
                         Button("Datenschutz", systemImage: "lock.shield") { model.showPrivacy = true }
                     } label: { Image(systemName: "line.3.horizontal").frame(width: 35, height: 38) }
@@ -527,6 +595,11 @@ struct VaultieScreen: View {
                 .navigationTitle("Lokale Lesezeichen")
                 .toolbar { Button("Fertig") { model.showBookmarks = false } }
             }
+        }
+        .alert("Lokaler Trackingschutz", isPresented: $model.showTrackingReport) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Filterregeln: \(LocalTrackingProtection.domainCount) bekannte Werbe-/Tracking-Domains. Link-Tracking-Schutz: \(model.stripTracking ? "aktiv" : "aus"). Seit Sitzungsbeginn entfernte Trackingparameter: \(model.cleanedParameters). Die Zahl blockierter WebKit-Anfragen lässt sich über diese Schnittstelle nicht zuverlässig auslesen. Es werden keine Berichte übertragen oder dauerhaft gespeichert.")
         }
         .alert("Download", isPresented: Binding(
             get: { model.downloadNotice != nil },
