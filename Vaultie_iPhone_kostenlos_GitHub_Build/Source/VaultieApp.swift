@@ -61,9 +61,13 @@ final class VaultieState: ObservableObject {
         if !FileManager.default.fileExists(atPath: preferencesURL.path),
            let legacy = UserDefaults.standard.object(forKey: "blockingEnabled") as? Bool,
            let encoded = try? JSONEncoder().encode(["blockingEnabled": legacy]) {
-            try? encoded.write(to: preferencesURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+            if (try? encoded.write(to: preferencesURL,
+                                   options: [.atomic, .completeFileProtectionUnlessOpen])) != nil {
+                UserDefaults.standard.removeObject(forKey: "blockingEnabled")
+            }
+        } else if FileManager.default.fileExists(atPath: preferencesURL.path) {
+            UserDefaults.standard.removeObject(forKey: "blockingEnabled")
         }
-        UserDefaults.standard.removeObject(forKey: "blockingEnabled")
         if let data = try? Data(contentsOf: fileURL),
            let loaded = try? JSONDecoder().decode([SavedBookmark].self, from: data) {
             bookmarks = loaded
